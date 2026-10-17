@@ -1,0 +1,15 @@
+node_modules/
+.wrangler/
+.dev.vars*
+.env*
+public/player.js
+*.mp3
+*.wav
+*.m4a
+*.ogg
+.DS_Store
+coverage/
+dist/
+.audio-prepared/
+__pycache__/
+!/.env.example

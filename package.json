@@ -1,0 +1,54 @@
+{
+  "name": "cloudflare-music-player",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "npm run build:client && wrangler dev",
+    "build:client": "esbuild client/player.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=public/player.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "test:audio": "python3 -m unittest discover -s test -p '*_test.py'",
+    "catalog:check": "tsx scripts/catalog.ts",
+    "catalog:check:remote": "tsx scripts/catalog.ts --remote",
+    "track:add": "tsx scripts/upload.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "check": "npm run catalog:check && npm run typecheck && npm test && npm run test:audio && npm run build:package && npm run build:client && wrangler deploy --dry-run",
+    "deploy": "npm run check && npm run catalog:check:remote && wrangler deploy",
+    "deploy:ci": "npm run catalog:check:remote && wrangler deploy",
+    "build:package": "tsc -p tsconfig.package.json",
+    "prepare": "npm run build:package"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260908.1",
+    "@types/node": "22.19.19",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.13",
+    "typescript": "5.9.3",
+    "wrangler": "4.129.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/player.d.ts",
+      "import": "./dist/player.js"
+    },
+    "./audio": {
+      "types": "./dist/audio.d.ts",
+      "import": "./dist/audio.js"
+    }
+  },
+  "files": [
+    "dist",
+    "client",
+    "tsconfig.package.json",
+    "skills/music-player"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Robinnnnn/cloudflare-music-player.git"
+  },
+  "private": true,
+  "description": "A configurable Cloudflare Workers + R2 music API and framework-free browser player."
+}

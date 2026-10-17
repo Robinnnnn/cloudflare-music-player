@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "tracks": [],
+  "playlists": [
+    {
+      "id": "default",
+      "title": "My playlist",
+      "trackIds": []
+    }
+  ]
+}
