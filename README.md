@@ -4,6 +4,8 @@ A small music API backed by Cloudflare Workers and R2, with a framework-free bro
 
 The browser player keeps one audio element, shuffles without immediate repeats, advances when a song ends, supports optional opening-song pools, and can preload one upcoming recording. A lower-level audio engine is also available for apps that own their own sequence, timing, fades, or local files.
 
+The audio-preparation tool trims blank introductions and matches perceived track volume while preserving musical dynamics. Preparation happens before upload; playback volume and fades are controlled separately.
+
 ## Run locally
 
 Requires Node.js 22.18 or later and npm. FFmpeg is optional for audio preparation and its integration tests.
@@ -23,6 +25,55 @@ npm run catalog:check
 ```
 
 The command uploads to local R2 and updates `catalog/catalog.json`. Audio files, local Wrangler state, environment files, and generated bundles are ignored by Git. Only cataloged object keys can be served. Catalog metadata and audio become public when deployed; use this service for recordings you intend to share.
+
+## Audio preparation and loudness
+
+Use Python 3 and FFmpeg to prepare a recording before uploading it:
+
+```sh
+python3 scripts/prepare-audio.py \
+  --file /path/to/original.mp3 \
+  --output /path/to/prepared.mp3
+```
+
+The tool writes a new MP3 and a JSON measurement report. It preserves the original and leaves uploading and catalog changes to the separate upload command. Use the prepared file with `npm run track:add` when ready.
+
+### Silence trimming
+
+The default detector trims only silence at the very beginning, below −60 dB and lasting at least 300 ms. It leaves an 80 ms cushion before the first sound and preserves internal pauses, quiet passages, and endings.
+
+A brief opening click or room noise can hide a blank introduction from the conservative detector. Inspect the opening before changing `--silence-threshold-db` (for example, to `-40`), or use `--trim-seconds` for an exact inspected cut. An explicit cut overrides detection; include the desired cushion in the supplied time. The report records how much was trimmed and whether the cut was detected or explicit.
+
+### Matching perceived volume
+
+The default target is **−24 LUFS**, suited to gentle background playback. The tool measures integrated loudness, loudness range, and true peak, then applies one constant gain to the whole recording. This preserves the difference between quiet and loud passages.
+
+The default maximum boost is **+12 dB**, and the true-peak target is **−2 dBTP**. Peak headroom takes priority over the loudness target: a recording with large peaks can remain quieter. The encoded MP3 is measured again and, when necessary, regenerated from the original at lower gain to account for encoder overshoot.
+
+`--target-lufs` changes the target between −30 and −14 LUFS. For an inspected, exceptionally quiet source, `--max-gain-db` can raise the boost cap up to 24 dB while retaining peak protection. For example:
+
+```sh
+python3 scripts/prepare-audio.py \
+  --file /path/to/original.mp3 \
+  --output /path/to/prepared.mp3 \
+  --target-lufs -24 --max-gain-db 18
+```
+
+### Optional gentle leveling
+
+`--gentle-leveling` permits up to **3 dB of estimated peak reduction** for recordings whose peaks prevent constant gain from reaching the target. It activates only when constant gain misses by more than 0.5 LU and limiting can add more than 0.5 dB; other tracks keep the constant-gain path. The configured boost cap still applies.
+
+The limiter uses 192 kHz oversampling, a −2.2 dB ceiling, 5 ms attack, 100 ms release, and delay compensation before encoding at 48 kHz. Encoded true peaks are rechecked and the ceiling lowered when needed. This can bring peak-limited tracks closer to the collection's volume while retaining quiet musical passages.
+
+The JSON report includes before/after loudness, loudness range, true peak, applied gain, trimming, warnings, and processing mode. Listen to the result alongside neighboring tracks: equal whole-track LUFS does not make every passage sound equally loud. Record intentional per-track target overrides so later replacements preserve those choices.
+
+When removing applause or another unwanted tail, choose the retained music first and normalize that segment; audience noise can skew whole-file loudness. Preserve source timestamps and any boundary fades. Preparation re-encodes MP3, so keep the originals and prepare future revisions from the original or a lossless intermediate.
+
+Existing audio checks include real FFmpeg encodes for trimming, peak protection, limiter delay, ending preservation, and original-file preservation:
+
+```sh
+npm run test:audio
+```
 
 ## Catalog
 
@@ -51,32 +102,7 @@ Add more playlist objects and pass their IDs to the player. Opening-song pools a
 
 ## Browser integration
 
-Import the module from your own running service. Replace the local origin when deploying:
-
-```html
-<button id="music" disabled>Loading music…</button>
-<span id="track"></span>
-<script type="module">
-  import { createMusicPlayer } from 'http://localhost:8787/player.js';
-
-  const player = createMusicPlayer({
-    baseUrl: 'http://localhost:8787',
-    playlistId: 'default',
-    preloadNext: true,
-  });
-  const button = document.querySelector('#music');
-  const label = document.querySelector('#track');
-  player.subscribe(({ status, track, error }) => {
-    button.disabled = ['idle', 'loading', 'empty', 'destroyed'].includes(status);
-    button.textContent = status === 'empty' ? 'Playlist is empty'
-      : ['playing', 'buffering'].includes(status) ? 'Pause music' : 'Play music';
-    label.textContent = error ?? (track ? `${track.title} — ${track.artist}` : '');
-  });
-  button.addEventListener('click', () => { void player.toggle(); });
-  void player.prepare();
-  // Call player.destroy() when the owning app/session ends.
-</script>
-```
+Import `createMusicPlayer` from your own service's `/player.js` module and configure `baseUrl` and `playlistId`. Subscribe to playback state to connect your app's controls; `subscribe()` immediately supplies the current state and returns an unsubscribe function. The full options and state contracts are in [`client/player-types.ts`](client/player-types.ts).
 
 Keep the player alive when menus or dialogs close. `prepare()` fetches metadata and selects the first track without playing. Call `play()`, `toggle()`, or `playNext()` directly from a user gesture. Operational failures appear in subscribed `state.error`; these methods do not reject for ordinary playback failures. `pause()` retains position; `destroy()` aborts work and releases the element.
 
