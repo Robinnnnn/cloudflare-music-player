@@ -43,7 +43,7 @@
     "dist",
     "client",
     "tsconfig.package.json",
-    "skills/music-player"
+    ".agents/skills/music-player"
   ],
   "repository": {
     "type": "git",
