@@ -1,0 +1,4 @@
+interface:
+  display_name: "Music Player"
+  short_description: "Integrate a configurable browser music player"
+  default_prompt: "Use $music-player to integrate the music player into this app."
